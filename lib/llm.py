@@ -22,8 +22,13 @@ DEFAULT_OPENROUTER_MODEL = "qwen/qwen-2.5-72b-instruct:free"
 # 모델 카탈로그: https://build.nvidia.com/explore/discover
 DEFAULT_NVIDIA_MODEL = "meta/llama-3.3-70b-instruct"
 
+# Google Gemini (aistudio.google.com) — OpenAI 호환 엔드포인트, 일 1500회 무료.
+# 모델 목록: https://ai.google.dev/gemini-api/docs/models
+DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-exp"
+
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
 BRIEFING_SYSTEM = (
     "당신은 한국어 일일 모닝 브리핑 작성자다. "
@@ -46,10 +51,13 @@ def summarize_briefing(headlines_text: str, *, max_tokens: int = 800) -> str:
         return _via_openrouter(headlines_text, max_tokens=max_tokens)
     if backend == "nvidia":
         return _via_nvidia(headlines_text, max_tokens=max_tokens)
+    if backend == "gemini":
+        return _via_gemini(headlines_text, max_tokens=max_tokens)
     if backend == "anthropic":
         return _via_anthropic(headlines_text, max_tokens=max_tokens)
     raise RuntimeError(
-        f"unknown LLM_BACKEND: {backend!r} (expected anthropic|openrouter|nvidia)"
+        f"unknown LLM_BACKEND: {backend!r} "
+        f"(expected anthropic|openrouter|nvidia|gemini)"
     )
 
 
@@ -69,6 +77,40 @@ def _via_anthropic(headlines_text: str, *, max_tokens: int) -> str:
         messages=[{"role": "user", "content": headlines_text}],
     )
     return "\n".join(b.text for b in response.content if b.type == "text").strip()
+
+
+def _via_gemini(headlines_text: str, *, max_tokens: int) -> str:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY not set in environment")
+    model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+
+    resp = requests.post(
+        GEMINI_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": [
+                {"role": "system", "content": BRIEFING_SYSTEM},
+                {"role": "user", "content": headlines_text},
+            ],
+        },
+        timeout=60,
+    )
+    if not resp.ok:
+        body = (resp.text or "(empty)")[:500]
+        raise RuntimeError(
+            f"Gemini HTTP {resp.status_code} {resp.reason} | model={model} | body: {body}"
+        )
+    data = resp.json()
+    try:
+        return data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError) as exc:
+        raise RuntimeError(f"unexpected Gemini response: {data}") from exc
 
 
 def _via_nvidia(headlines_text: str, *, max_tokens: int) -> str:
