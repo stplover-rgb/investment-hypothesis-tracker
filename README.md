@@ -5,6 +5,8 @@
 
 픽셀7 + Termux + cron 환경에서 자율 실행되도록 설계됨 (자율성 L2).
 
+> **처음이세요?** 픽셀7 셋업은 [`pixel/QUICKSTART.md`](pixel/QUICKSTART.md) 따라하시면 됩니다 (약 20분).
+
 ## 구조
 
 ```
