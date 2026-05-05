@@ -1,0 +1,25 @@
+# 추적 중인 투자 가설.
+# corp_code는 OpenDart 고유번호(8자리). 종목코드(6자리)와 다름에 유의.
+# 매핑 조회: https://opendart.fss.or.kr/api/corpCode.xml (전체 다운로드)
+#           또는 lib/opendart에 helper 추가 예정.
+
+- id: H001
+  title: 삼성전자 HBM 수요는 2027년까지 강하게 지속된다
+  corp_name: 삼성전자
+  corp_code: "00126380"
+  watch_keywords:
+    - HBM
+    - 메모리
+    - 설비투자
+    - 자기주식
+  status: active
+
+- id: H002
+  title: SK하이닉스는 HBM 점유율 우위로 마진 레버리지 확대
+  corp_name: SK하이닉스
+  corp_code: "00164779"
+  watch_keywords:
+    - HBM
+    - 영업이익
+    - CAPEX
+  status: active
