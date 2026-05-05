@@ -22,3 +22,6 @@ PROJ=/data/data/com.termux/files/home/projects/investment-hypothesis-tracker
 
 # 토요일 정오 — 한 주 누적 공시 재확인 (lookback 7일)
 0 12 * * 6 cd $PROJ && python -c "from jobs.daily_disclosure_check import run; run(lookback_days=7)" >> logs/cron.log 2>&1
+
+# 매일 자정 30분 — Obsidian vault 백업 (OBSIDIAN_VAULT_PATH 미설정 시 graceful skip)
+30 0 * * * cd $PROJ && python -m jobs.obsidian_backup >> logs/cron.log 2>&1
