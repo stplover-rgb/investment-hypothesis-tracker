@@ -105,13 +105,23 @@ def cmd_disclosure(args: str, _update: Update) -> str:
 
 def cmd_brief(_args: str, _update: Update) -> str:
     from jobs.morning_brief import run as run_brief
-    code = run_brief()
+    try:
+        code = run_brief()
+    except Exception as exc:
+        return f"❌ 브리핑 실행 중 예외:\n```\n{exc!r}\n```"
+
     today = date.today().isoformat()
     out = ROOT / "data" / "briefings" / f"{today}.md"
     if code == 0 and out.exists():
         body = out.read_text(encoding="utf-8")
         return body[:3500] + ("\n\n_(잘림)_" if len(body) > 3500 else "")
-    return "브리핑 실행 실패 — `/log` 로 확인."
+
+    # 실패 시 오늘자 로그 끝부분을 그대로 회신해서 즉시 디버그 가능하게
+    daily_log = ROOT / "logs" / f"{today}.log"
+    if daily_log.exists():
+        tail = "\n".join(daily_log.read_text(encoding="utf-8").splitlines()[-10:])
+        return f"❌ 브리핑 실패 (exit={code}). 최근 로그:\n```\n{tail}\n```"
+    return f"❌ 브리핑 실패 (exit={code}) — 로그 파일도 없음."
 
 
 def cmd_status(_args: str, _update: Update) -> str:
