@@ -22,13 +22,13 @@ DEFAULT_OPENROUTER_MODEL = "qwen/qwen-2.5-72b-instruct:free"
 # 모델 카탈로그: https://build.nvidia.com/explore/discover
 DEFAULT_NVIDIA_MODEL = "meta/llama-3.3-70b-instruct"
 
-# Google Gemini (aistudio.google.com) — OpenAI 호환 엔드포인트, 일 1500회 무료.
+# Google Gemini (aistudio.google.com) — 네이티브 API, 일 1500회 무료.
 # 모델 목록: https://ai.google.dev/gemini-api/docs/models
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash-exp"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 BRIEFING_SYSTEM = (
     "당신은 한국어 일일 모닝 브리핑 작성자다. "
@@ -80,24 +80,28 @@ def _via_anthropic(headlines_text: str, *, max_tokens: int) -> str:
 
 
 def _via_gemini(headlines_text: str, *, max_tokens: int) -> str:
+    """네이티브 Gemini API. OpenAI 호환 엔드포인트보다 모델 호환성/안정성 좋음."""
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not set in environment")
     model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
 
+    url = f"{GEMINI_BASE_URL}/{model}:generateContent"
     resp = requests.post(
-        GEMINI_URL,
+        url,
         headers={
-            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "x-goog-api-key": api_key,
         },
         json={
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": [
-                {"role": "system", "content": BRIEFING_SYSTEM},
-                {"role": "user", "content": headlines_text},
+            "system_instruction": {"parts": [{"text": BRIEFING_SYSTEM}]},
+            "contents": [
+                {"role": "user", "parts": [{"text": headlines_text}]},
             ],
+            "generationConfig": {
+                "maxOutputTokens": max_tokens,
+                "temperature": 0.4,
+            },
         },
         timeout=60,
     )
@@ -108,7 +112,8 @@ def _via_gemini(headlines_text: str, *, max_tokens: int) -> str:
         )
     data = resp.json()
     try:
-        return data["choices"][0]["message"]["content"].strip()
+        parts = data["candidates"][0]["content"]["parts"]
+        return "".join(p.get("text", "") for p in parts).strip()
     except (KeyError, IndexError) as exc:
         raise RuntimeError(f"unexpected Gemini response: {data}") from exc
 
