@@ -14,10 +14,10 @@ PROJ_DIR="${PROJ_DIR:-$HOME/projects/investment-hypothesis-tracker}"
 
 echo "==> Termux 패키지 설치"
 pkg update -y
-pkg install -y python git termux-api cronie nano
+pkg install -y python python-pip git termux-api cronie nano
 
-echo "==> Python 의존성을 위한 pip 업그레이드"
-pip install --upgrade pip
+# 주의: Termux에서는 `pip install --upgrade pip` 가 의도적으로 차단됨
+# (python-pip 패키지로 관리되기 때문). 그래서 pip 업그레이드는 생략한다.
 
 if [ ! -d "$PROJ_DIR" ]; then
     echo "==> 저장소 클론: $REPO_URL"
