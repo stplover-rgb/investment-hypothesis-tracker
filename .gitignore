@@ -8,5 +8,6 @@ __pycache__/
 
 data/state/
 data/cache/
+data/briefings/
 logs/
 *.log

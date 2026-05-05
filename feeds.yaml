@@ -1,0 +1,18 @@
+# 모닝 브리핑이 매일 아침 읽어오는 RSS 피드.
+# 본인 관심사로 자유롭게 교체/추가하세요.
+#
+# 한국어 피드 URL이 종종 바뀌므로 동작 안 하면 사이트에서 RSS 링크 재확인.
+# 추가 가능한 후보:
+#   - 매일경제 증권: https://www.mk.co.kr/rss/50200011/
+#   - 한경 증권: https://rss.hankyung.com/feed/finance.xml
+#   - 연합 경제: https://www.yna.co.kr/rss/economy.xml
+#   - 블로그: 본인이 따라가는 사람의 RSS
+#   - GitHub trending: https://github.com/trending.atom
+#   - arXiv (특정 카테고리): http://arxiv.org/rss/cs.AI
+
+feeds:
+  - name: Hacker News Frontpage
+    url: https://hnrss.org/frontpage
+
+  - name: Reuters Markets
+    url: https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best

@@ -1,14 +1,19 @@
 """Notification channels.
 
-L2 단계에서는 파일 로그 + Termux 알림(있으면)만 지원.
-L3에서 카카오 메모챗/슬랙 등으로 확장 예정.
+지원 채널:
+- 파일 로그 (항상)
+- Termux 알림 (termux-notification 있을 때만)
+- ntfy.sh 푸시 (NTFY_TOPIC env 설정 시)
 """
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import Path
+import os
 import shutil
 import subprocess
+from datetime import datetime
+from pathlib import Path
+
+import requests
 
 
 def log_to_file(message: str, log_dir: Path) -> None:
@@ -30,4 +35,25 @@ def termux_notify(title: str, content: str) -> bool:
         )
         return True
     except (subprocess.SubprocessError, OSError):
+        return False
+
+
+def ntfy_send(title: str, body: str, *, priority: str = "default") -> bool:
+    """NTFY_TOPIC 환경변수가 설정돼 있으면 ntfy.sh로 푸시. 없으면 False."""
+    topic = os.environ.get("NTFY_TOPIC")
+    if not topic:
+        return False
+    server = os.environ.get("NTFY_SERVER", "https://ntfy.sh").rstrip("/")
+    try:
+        requests.post(
+            f"{server}/{topic}",
+            data=body.encode("utf-8"),
+            headers={
+                "Title": title.encode("utf-8"),
+                "Priority": priority,
+            },
+            timeout=5,
+        )
+        return True
+    except requests.RequestException:
         return False

@@ -5,6 +5,9 @@ PATH=/data/data/com.termux/files/usr/bin:/data/data/com.termux/files/usr/lib
 HOME=/data/data/com.termux/files/home
 PROJ=/data/data/com.termux/files/home/projects/investment-hypothesis-tracker
 
+# 평일 오전 6:30 — 모닝 브리핑 (RSS 요약)
+30 6 * * 1-5 cd $PROJ && python -m jobs.morning_brief >> logs/cron.log 2>&1
+
 # 평일 오전 8시 — 신규 공시 체크
 0 8 * * 1-5 cd $PROJ && python -m jobs.daily_disclosure_check >> logs/cron.log 2>&1
 

@@ -17,8 +17,12 @@
 │   ├── hypotheses.py        # 가설 로더
 │   └── notify.py            # 알림 채널
 ├── jobs/
-│   └── daily_disclosure_check.py   # 매일 실행되는 공시 체크
+│   ├── daily_disclosure_check.py   # 매일 실행되는 공시 체크
+│   ├── morning_brief.py            # RSS → Claude 요약 → 푸시
+│   └── smoke_test.py               # 셋업 검증
+├── feeds.yaml               # 모닝 브리핑 RSS 피드 목록
 ├── pixel/                   # Termux/cron 셋업 자료
+│   ├── QUICKSTART.md
 │   ├── SETUP.md
 │   └── crontab.example
 └── data/
