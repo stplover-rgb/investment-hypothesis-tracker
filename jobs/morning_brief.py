@@ -7,7 +7,6 @@
 """
 from __future__ import annotations
 
-import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -32,9 +31,6 @@ def _format_sources(items: list[FeedItem], limit: int = 40) -> str:
 
 def run(*, hours: int = 24) -> int:
     load_dotenv(ROOT / ".env")
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print("ANTHROPIC_API_KEY not set in .env", file=sys.stderr)
-        return 1
 
     log_dir = ROOT / "logs"
     feeds_path = ROOT / "feeds.yaml"
@@ -53,7 +49,9 @@ def run(*, hours: int = 24) -> int:
     try:
         summary = summarize_briefing(headlines)
     except Exception as exc:
-        log_to_file(f"morning_brief: LLM error — {exc}", log_dir)
+        msg = f"morning_brief: LLM error — {exc}"
+        log_to_file(msg, log_dir)
+        print(msg, file=sys.stderr)
         return 1
 
     today = date.today().isoformat()
