@@ -10,6 +10,10 @@ PROJ=/data/data/com.termux/files/home/projects/investment-hypothesis-tracker
 # 보안 모델은 tasks/README.md 참고.
 */5 * * * * bash $PROJ/scripts/auto_sync.sh
 
+# === 텔레그램 봇 워치독 (5분 간격) ===
+# 봇이 죽어있으면 백그라운드로 다시 띄움. 살아있으면 no-op.
+*/5 * * * * pgrep -f 'jobs.tg_bot' >/dev/null || (cd $PROJ && nohup python -m jobs.tg_bot >> logs/tg_bot.log 2>&1 &)
+
 # 평일 오전 6:30 — 모닝 브리핑 (RSS 요약)
 30 6 * * 1-5 cd $PROJ && python -m jobs.morning_brief >> logs/cron.log 2>&1
 
