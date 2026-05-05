@@ -95,7 +95,11 @@ def _via_nvidia(headlines_text: str, *, max_tokens: int) -> str:
         },
         timeout=60,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        body = (resp.text or "(empty)")[:500]
+        raise RuntimeError(
+            f"NVIDIA HTTP {resp.status_code} {resp.reason} | model={model} | body: {body}"
+        )
     data = resp.json()
     try:
         return data["choices"][0]["message"]["content"].strip()
@@ -128,7 +132,11 @@ def _via_openrouter(headlines_text: str, *, max_tokens: int) -> str:
         },
         timeout=60,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        body = (resp.text or "(empty)")[:500]
+        raise RuntimeError(
+            f"OpenRouter HTTP {resp.status_code} {resp.reason} | model={model} | body: {body}"
+        )
     data = resp.json()
     try:
         return data["choices"][0]["message"]["content"].strip()
