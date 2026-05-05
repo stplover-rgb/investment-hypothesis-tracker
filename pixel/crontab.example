@@ -5,6 +5,11 @@ PATH=/data/data/com.termux/files/usr/bin:/data/data/com.termux/files/usr/lib
 HOME=/data/data/com.termux/files/home
 PROJ=/data/data/com.termux/files/home/projects/investment-hypothesis-tracker
 
+# === GitOps 자동 동기화 (5분 간격) ===
+# 원격 push를 가져오고 tasks/pending 큐를 실행한다.
+# 보안 모델은 tasks/README.md 참고.
+*/5 * * * * bash $PROJ/scripts/auto_sync.sh
+
 # 평일 오전 6:30 — 모닝 브리핑 (RSS 요약)
 30 6 * * 1-5 cd $PROJ && python -m jobs.morning_brief >> logs/cron.log 2>&1
 
