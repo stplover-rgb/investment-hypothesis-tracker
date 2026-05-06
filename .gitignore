@@ -9,7 +9,6 @@ __pycache__/
 data/state/
 data/cache/
 data/briefings/
-data/transactions/
 data/backups/
 logs/
 *.log
