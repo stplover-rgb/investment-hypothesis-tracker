@@ -46,8 +46,34 @@ CHAT_SYSTEM = (
     "- /가설 활성 가설 목록\n"
     "- /공시 회사명 — 최근 14일 공시\n"
     "- /브리핑 — 즉시 모닝 브리핑\n"
+    "- /링크 URL — 유튜브 영상 자막 요약\n"
     "- /상태 — 시스템 상태\n"
     "필요하다면 사용자에게 위 명령을 안내해도 좋다."
+)
+
+YOUTUBE_SYSTEM = (
+    "당신은 한국 투자/경제 유튜브 영상의 자막을 요약하는 도구입니다.\n"
+    "\n"
+    "입력은 영상 자막 텍스트 (자동생성 자막 포함). 출력 형식 — Markdown:\n"
+    "\n"
+    "*핵심 5~7줄*\n"
+    "- 가장 중요한 사실/주장부터, 각 줄 40자 이내\n"
+    "- 구체적 숫자/지표 있으면 포함\n"
+    "\n"
+    "*언급 종목/티커*\n"
+    "- 한국 종목명 + 미국 티커 + ETF 등 (있으면)\n"
+    "- 없으면 '없음'\n"
+    "\n"
+    "*주제 키워드*\n"
+    "- 매크로/산업/정책 등 3~5개 태그\n"
+    "\n"
+    "*추천도*\n"
+    "- 1~5점 (시간 투자 가치) + 한 문장 이유\n"
+    "\n"
+    "주의:\n"
+    "- 자동생성 자막은 종목명 오타가 많음 — 맥락으로 보정해서 추정\n"
+    "- 잘 모르는 부분은 추측하지 말고 생략\n"
+    "- 헤더/인삿말 없이 바로 본문 시작"
 )
 
 
@@ -202,3 +228,13 @@ def summarize_briefing(headlines_text: str, *, max_tokens: int = 800) -> str:
 def chat(messages: list[dict], *, max_tokens: int = 1000) -> str:
     """멀티턴 대화. messages는 [{role: "user"|"assistant", content: str}] 리스트."""
     return _call(messages, system=CHAT_SYSTEM, max_tokens=max_tokens)
+
+
+def summarize_youtube(transcript: str, *, max_tokens: int = 1200) -> str:
+    """유튜브 자막 → 구조화된 한국어 요약. transcript은 30000자 초과시 잘라냄."""
+    truncated = transcript[:30000]
+    return _call(
+        [{"role": "user", "content": truncated}],
+        system=YOUTUBE_SYSTEM,
+        max_tokens=max_tokens,
+    )

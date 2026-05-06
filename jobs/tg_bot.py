@@ -50,6 +50,7 @@ HELP_TEXT = (
     "/가설 — 활성 가설 목록\n"
     "/공시 회사명 — 최근 14일 공시\n"
     "/브리핑 — 즉시 모닝 브리핑\n"
+    "/링크 URL — 유튜브 영상 즉석 요약\n"
     "/상태 — 시스템 상태\n"
     "/log N — 최근 N줄 로그\n"
     "/리셋 — 대화 기록 초기화\n"
@@ -172,6 +173,43 @@ def cmd_status(_args: str, _update: Update) -> str:
     )
 
 
+def cmd_link(args: str, _update: Update) -> str:
+    url = args.strip()
+    if not url:
+        return "사용법: `/링크 https://youtu.be/xxx`"
+
+    from lib.youtube import extract_video_id, fetch_transcript
+    from lib.llm import summarize_youtube
+
+    video_id = extract_video_id(url)
+    if not video_id:
+        return f"❌ 유튜브 URL 인식 실패: `{url}`\n지원: youtu.be, youtube.com/watch, /shorts/, /embed/"
+
+    try:
+        result = fetch_transcript(video_id)
+    except Exception as exc:
+        return f"❌ 자막 가져오기 실패:\n```\n{exc!r}\n```"
+
+    if result is None or not result.text.strip():
+        return (
+            f"❌ 이 영상은 자막이 없거나 비활성화돼 있어요.\n"
+            f"https://youtu.be/{video_id}"
+        )
+
+    try:
+        summary = summarize_youtube(result.text)
+    except Exception as exc:
+        return f"❌ 요약 실패:\n```\n{exc!r}\n```"
+
+    flag = "⚠️ 자동생성 자막" if result.is_generated else "✅ 수동 자막"
+    return (
+        f"📺 *영상 요약*\n"
+        f"https://youtu.be/{video_id}\n"
+        f"_{flag} ({result.language})_\n\n"
+        f"{summary}"
+    )
+
+
 def cmd_log(args: str, _update: Update) -> str:
     try:
         n = max(1, min(int(args.strip() or "20"), 100))
@@ -199,6 +237,8 @@ COMMANDS = {
     "/가설": cmd_hypotheses,
     "/공시": cmd_disclosure,
     "/브리핑": cmd_brief,
+    "/링크": cmd_link,
+    "/유튜브": cmd_link,
     "/상태": cmd_status,
     "/log": cmd_log,
     "/리셋": cmd_reset,
