@@ -1,10 +1,10 @@
-"""LLM 클라이언트 — Anthropic 또는 OpenRouter 백엔드 선택 가능.
+"""LLM 클라이언트 — Anthropic / OpenRouter / NVIDIA / Gemini 백엔드 선택.
 
-LLM_BACKEND 환경변수로 선택:
-  - "anthropic" (기본): ANTHROPIC_API_KEY 필요
-  - "openrouter":      OPENROUTER_API_KEY 필요
+LLM_BACKEND 환경변수로 선택. 두 가지 진입점:
+- summarize_briefing(text)   : 한 번에 한국어 brief 한 덩어리
+- chat(messages)             : 멀티턴 대화
 
-cron이 매일 호출하는 단발성 요약용. 작은/빠른 모델로 비용 최소화.
+내부적으로 _call(messages, system) 한 곳에서 백엔드 분기.
 """
 from __future__ import annotations
 
@@ -13,17 +13,8 @@ import os
 import requests
 
 DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
-
-# OpenRouter 무료 모델 (모델 ID는 가끔 바뀌니 .env에서 OPENROUTER_MODEL로 오버라이드 가능).
-# 무료 모델 목록: https://openrouter.ai/models?max_price=0
 DEFAULT_OPENROUTER_MODEL = "qwen/qwen-2.5-72b-instruct:free"
-
-# NVIDIA NIM (build.nvidia.com) — OpenAI 호환, 무료 크레딧 제공.
-# 모델 카탈로그: https://build.nvidia.com/explore/discover
 DEFAULT_NVIDIA_MODEL = "meta/llama-3.3-70b-instruct"
-
-# Google Gemini (aistudio.google.com) — 네이티브 API, 일 1500회 무료.
-# 모델 목록: https://ai.google.dev/gemini-api/docs/models
 DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -40,68 +31,132 @@ BRIEFING_SYSTEM = (
     "섹션 헤더나 인삿말 없이 bullet만 출력."
 )
 
+CHAT_SYSTEM = (
+    "당신은 박동은님의 개인 비서이자 투자 트래커 봇입니다.\n"
+    "\n"
+    "원칙:\n"
+    "- 한국어로 자연스럽고 간결하게 답변\n"
+    "- 답변은 텔레그램 채팅에 맞게 짧게 — 보통 1~5줄, 길어도 10줄 이내\n"
+    "- 투자/시장/거시경제 질문은 전문적이면서도 균형 잡힌 시각으로\n"
+    "- 모르는 것은 모른다고 솔직히 (특히 실시간 시세, 미래 예측)\n"
+    "- 일반 대화도 자연스럽게\n"
+    "- 마크다운(*굵게*, `코드`)은 가볍게 사용 가능\n"
+    "\n"
+    "추가 도구 (사용자가 슬래시 명령으로 호출):\n"
+    "- /가설 활성 가설 목록\n"
+    "- /공시 회사명 — 최근 14일 공시\n"
+    "- /브리핑 — 즉시 모닝 브리핑\n"
+    "- /상태 — 시스템 상태\n"
+    "필요하다면 사용자에게 위 명령을 안내해도 좋다."
+)
+
 
 def _backend() -> str:
     return os.environ.get("LLM_BACKEND", "anthropic").lower().strip()
 
 
-def summarize_briefing(headlines_text: str, *, max_tokens: int = 800) -> str:
-    backend = _backend()
-    if backend == "openrouter":
-        return _via_openrouter(headlines_text, max_tokens=max_tokens)
-    if backend == "nvidia":
-        return _via_nvidia(headlines_text, max_tokens=max_tokens)
-    if backend == "gemini":
-        return _via_gemini(headlines_text, max_tokens=max_tokens)
-    if backend == "anthropic":
-        return _via_anthropic(headlines_text, max_tokens=max_tokens)
-    raise RuntimeError(
-        f"unknown LLM_BACKEND: {backend!r} "
-        f"(expected anthropic|openrouter|nvidia|gemini)"
-    )
+# ---------- 백엔드별 transport ----------
 
-
-def _via_anthropic(headlines_text: str, *, max_tokens: int) -> str:
+def _call_anthropic(messages: list[dict], system: str, *, max_tokens: int) -> str:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY not set in environment")
-    # 지연 임포트 — OpenRouter만 쓰는 사용자는 anthropic 패키지 설치 안 해도 됨
-    from anthropic import Anthropic
-
+    from anthropic import Anthropic  # 지연 임포트
     model = os.environ.get("ANTHROPIC_MODEL", DEFAULT_ANTHROPIC_MODEL)
     client = Anthropic(api_key=api_key)
     response = client.messages.create(
         model=model,
         max_tokens=max_tokens,
-        system=BRIEFING_SYSTEM,
-        messages=[{"role": "user", "content": headlines_text}],
+        system=system,
+        messages=messages,
     )
     return "\n".join(b.text for b in response.content if b.type == "text").strip()
 
 
-def _via_gemini(headlines_text: str, *, max_tokens: int) -> str:
-    """네이티브 Gemini API. OpenAI 호환 엔드포인트보다 모델 호환성/안정성 좋음."""
+def _call_openrouter(messages: list[dict], system: str, *, max_tokens: int) -> str:
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY not set in environment")
+    model = os.environ.get("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)
+    full = [{"role": "system", "content": system}, *messages]
+    resp = requests.post(
+        OPENROUTER_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/stplover-rgb/investment-hypothesis-tracker",
+            "X-Title": "investment-hypothesis-tracker",
+        },
+        json={"model": model, "max_tokens": max_tokens, "messages": full},
+        timeout=60,
+    )
+    if not resp.ok:
+        body = (resp.text or "(empty)")[:500]
+        raise RuntimeError(
+            f"OpenRouter HTTP {resp.status_code} {resp.reason} | model={model} | body: {body}"
+        )
+    data = resp.json()
+    try:
+        return data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError) as exc:
+        raise RuntimeError(f"unexpected OpenRouter response: {data}") from exc
+
+
+def _call_nvidia(messages: list[dict], system: str, *, max_tokens: int) -> str:
+    api_key = os.environ.get("NVIDIA_API_KEY")
+    if not api_key:
+        raise RuntimeError("NVIDIA_API_KEY not set in environment")
+    model = os.environ.get("NVIDIA_MODEL", DEFAULT_NVIDIA_MODEL)
+    full = [{"role": "system", "content": system}, *messages]
+    resp = requests.post(
+        NVIDIA_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        json={
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": 0.4,
+            "messages": full,
+        },
+        timeout=60,
+    )
+    if not resp.ok:
+        body = (resp.text or "(empty)")[:500]
+        raise RuntimeError(
+            f"NVIDIA HTTP {resp.status_code} {resp.reason} | model={model} | body: {body}"
+        )
+    data = resp.json()
+    try:
+        return data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError) as exc:
+        raise RuntimeError(f"unexpected NVIDIA response: {data}") from exc
+
+
+def _call_gemini(messages: list[dict], system: str, *, max_tokens: int) -> str:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not set in environment")
     model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
 
-    url = f"{GEMINI_BASE_URL}/{model}:generateContent"
+    # OpenAI 포맷 → Gemini 포맷 변환
+    contents = []
+    for m in messages:
+        role = "user" if m["role"] == "user" else "model"
+        contents.append({"role": role, "parts": [{"text": m["content"]}]})
+
     resp = requests.post(
-        url,
+        f"{GEMINI_BASE_URL}/{model}:generateContent",
         headers={
             "Content-Type": "application/json",
             "x-goog-api-key": api_key,
         },
         json={
-            "system_instruction": {"parts": [{"text": BRIEFING_SYSTEM}]},
-            "contents": [
-                {"role": "user", "parts": [{"text": headlines_text}]},
-            ],
-            "generationConfig": {
-                "maxOutputTokens": max_tokens,
-                "temperature": 0.4,
-            },
+            "system_instruction": {"parts": [{"text": system}]},
+            "contents": contents,
+            "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.4},
         },
         timeout=60,
     )
@@ -118,74 +173,32 @@ def _via_gemini(headlines_text: str, *, max_tokens: int) -> str:
         raise RuntimeError(f"unexpected Gemini response: {data}") from exc
 
 
-def _via_nvidia(headlines_text: str, *, max_tokens: int) -> str:
-    api_key = os.environ.get("NVIDIA_API_KEY")
-    if not api_key:
-        raise RuntimeError("NVIDIA_API_KEY not set in environment")
-    model = os.environ.get("NVIDIA_MODEL", DEFAULT_NVIDIA_MODEL)
-
-    resp = requests.post(
-        NVIDIA_URL,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        json={
-            "model": model,
-            "max_tokens": max_tokens,
-            "temperature": 0.4,
-            "messages": [
-                {"role": "system", "content": BRIEFING_SYSTEM},
-                {"role": "user", "content": headlines_text},
-            ],
-        },
-        timeout=60,
+def _call(messages: list[dict], system: str, *, max_tokens: int) -> str:
+    backend = _backend()
+    if backend == "anthropic":
+        return _call_anthropic(messages, system, max_tokens=max_tokens)
+    if backend == "openrouter":
+        return _call_openrouter(messages, system, max_tokens=max_tokens)
+    if backend == "nvidia":
+        return _call_nvidia(messages, system, max_tokens=max_tokens)
+    if backend == "gemini":
+        return _call_gemini(messages, system, max_tokens=max_tokens)
+    raise RuntimeError(
+        f"unknown LLM_BACKEND: {backend!r} "
+        f"(expected anthropic|openrouter|nvidia|gemini)"
     )
-    if not resp.ok:
-        body = (resp.text or "(empty)")[:500]
-        raise RuntimeError(
-            f"NVIDIA HTTP {resp.status_code} {resp.reason} | model={model} | body: {body}"
-        )
-    data = resp.json()
-    try:
-        return data["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError) as exc:
-        raise RuntimeError(f"unexpected NVIDIA response: {data}") from exc
 
 
-def _via_openrouter(headlines_text: str, *, max_tokens: int) -> str:
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY not set in environment")
-    model = os.environ.get("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL)
+# ---------- 진입점 ----------
 
-    resp = requests.post(
-        OPENROUTER_URL,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            # OpenRouter 분석용 (선택)
-            "HTTP-Referer": "https://github.com/stplover-rgb/investment-hypothesis-tracker",
-            "X-Title": "investment-hypothesis-tracker",
-        },
-        json={
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": [
-                {"role": "system", "content": BRIEFING_SYSTEM},
-                {"role": "user", "content": headlines_text},
-            ],
-        },
-        timeout=60,
+def summarize_briefing(headlines_text: str, *, max_tokens: int = 800) -> str:
+    return _call(
+        [{"role": "user", "content": headlines_text}],
+        system=BRIEFING_SYSTEM,
+        max_tokens=max_tokens,
     )
-    if not resp.ok:
-        body = (resp.text or "(empty)")[:500]
-        raise RuntimeError(
-            f"OpenRouter HTTP {resp.status_code} {resp.reason} | model={model} | body: {body}"
-        )
-    data = resp.json()
-    try:
-        return data["choices"][0]["message"]["content"].strip()
-    except (KeyError, IndexError) as exc:
-        raise RuntimeError(f"unexpected OpenRouter response: {data}") from exc
+
+
+def chat(messages: list[dict], *, max_tokens: int = 1000) -> str:
+    """멀티턴 대화. messages는 [{role: "user"|"assistant", content: str}] 리스트."""
+    return _call(messages, system=CHAT_SYSTEM, max_tokens=max_tokens)

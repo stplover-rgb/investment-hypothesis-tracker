@@ -9,6 +9,10 @@
   /브리핑       — 즉시 모닝 브리핑 실행 후 결과 회신
   /상태        — cron, git, 최근 sync 상태
   /log [N]     — logs/tasks.log 최근 N줄
+  /리셋        — 대화 기록 초기화
+
+슬래시로 시작하지 않는 메시지는 LLM 채팅으로 라우팅.
+대화 기록은 chat_id별로 메모리에 보관 (봇 재시작 시 사라짐).
 
 cron 워치독(crontab.example 참조)이 5분마다 살아있는지 확인 후 살림.
 """
@@ -30,10 +34,17 @@ sys.path.insert(0, str(ROOT))
 from lib.hypotheses import active, load_hypotheses  # noqa: E402
 from lib.telegram import TelegramClient, Update  # noqa: E402
 
+# 메모리 내 대화 기록 (chat_id -> [{"role", "content"}, ...])
+_chat_histories: dict[int, list[dict]] = {}
+MAX_HISTORY_TURNS = 20  # user/assistant 합쳐서 최대 N개
+
 # ------------------------ 명령어 핸들러 ------------------------
 
 HELP_TEXT = (
     "*투자 트래커 봇*\n\n"
+    "슬래시 없이 그냥 말 거셔도 됩니다 — LLM이 답변합니다.\n"
+    "\n"
+    "*명령어*\n"
     "/help, /도움 — 이 도움말\n"
     "/whoami — 내 chat id\n"
     "/가설 — 활성 가설 목록\n"
@@ -41,6 +52,7 @@ HELP_TEXT = (
     "/브리핑 — 즉시 모닝 브리핑\n"
     "/상태 — 시스템 상태\n"
     "/log N — 최근 N줄 로그\n"
+    "/리셋 — 대화 기록 초기화\n"
 )
 
 
@@ -172,6 +184,13 @@ def cmd_log(args: str, _update: Update) -> str:
     return "```\n" + "\n".join(lines) + "\n```"
 
 
+def cmd_reset(_args: str, update: Update) -> str:
+    had = _chat_histories.pop(update.chat_id, None)
+    if had:
+        return f"✅ 대화 기록 초기화됨 ({len(had)}턴)."
+    return "기록 없음."
+
+
 COMMANDS = {
     "/start": cmd_start,
     "/help": cmd_help,
@@ -182,7 +201,31 @@ COMMANDS = {
     "/브리핑": cmd_brief,
     "/상태": cmd_status,
     "/log": cmd_log,
+    "/리셋": cmd_reset,
+    "/clear": cmd_reset,
 }
+
+
+# ---------- LLM 채팅 (슬래시 아닌 메시지) ----------
+
+def handle_chat(text: str, chat_id: int) -> str:
+    from lib.llm import chat as llm_chat
+
+    history = _chat_histories.setdefault(chat_id, [])
+    history.append({"role": "user", "content": text})
+
+    # 최근 N턴만 유지하면서 호출
+    pruned = history[-MAX_HISTORY_TURNS:]
+    try:
+        response = llm_chat(pruned)
+    except Exception as exc:
+        history.pop()  # user 메시지 롤백
+        return f"❌ 응답 실패:\n```\n{exc!r}\n```"
+
+    history.append({"role": "assistant", "content": response})
+    if len(history) > MAX_HISTORY_TURNS:
+        del history[: len(history) - MAX_HISTORY_TURNS]
+    return response
 
 
 # ------------------------ 인증 + 디스패치 ------------------------
@@ -204,8 +247,13 @@ def handle(client: TelegramClient, update: Update, allowed: set[int]) -> None:
         return
 
     text = (update.text or "").strip()
+    if not text:
+        return
+
     if not text.startswith("/"):
-        client.send_message(update.chat_id, "명령은 `/` 로 시작합니다. `/help` 참고.")
+        # 슬래시 아닌 메시지는 LLM 채팅으로 라우팅
+        result = handle_chat(text, update.chat_id)
+        client.send_message(update.chat_id, result)
         return
 
     parts = text.split(maxsplit=1)
